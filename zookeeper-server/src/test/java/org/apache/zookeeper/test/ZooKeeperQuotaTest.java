@@ -21,6 +21,7 @@ package org.apache.zookeeper.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import java.io.IOException;
@@ -582,6 +583,90 @@ public class ZooKeeperQuotaTest extends ClientBase {
                 assertEquals(5, st.getBytes());
                 assertEquals(-1, st.getByteHardLimit());
             }
+        }
+    }
+
+    /**
+     * Malformed or null data written by a client to a quota
+     * zookeeper_stats/zookeeper_limits node must be rejected before it is
+     * committed; previously it was stored and the next write under the quota
+     * namespace crashed the transaction-apply path (and replay on restart).
+     */
+    @Test
+    public void testMalformedQuotaDataWriteIsRejected() throws Exception {
+        final String path = "/quotaPoison";
+        zk.create(path, "data".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        StatsTrack quota = new StatsTrack();
+        quota.setCount(10);
+        quota.setBytes(1000L);
+        SetQuotaCommand.createQuota(zk, path, quota);
+
+        final String statPath = Quotas.statPath(path);
+        final String limitPath = Quotas.limitPath(path);
+        for (final byte[] bad : Arrays.asList("x".getBytes(), "count=abc".getBytes(), "=5".getBytes(), null)) {
+            assertThrows(KeeperException.BadArgumentsException.class, () -> zk.setData(statPath, bad, -1));
+            assertThrows(KeeperException.BadArgumentsException.class, () -> zk.setData(limitPath, bad, -1));
+        }
+        // the same guard applies to setData inside a multi transaction
+        assertThrows(KeeperException.BadArgumentsException.class,
+                () -> zk.multi(Arrays.asList(Op.setData(statPath, "x".getBytes(), -1))));
+
+        // the detonating write under the quota namespace succeeds and the
+        // stats node is still well-formed
+        zk.create(path + "/child", "abc".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        byte[] statData = zk.getData(statPath, false, null);
+        assertTrue(StatsTrack.isValidStatsData(statData));
+        StatsTrack st = new StatsTrack(statData);
+        assertEquals(2, st.getCount());
+        assertEquals(7L, st.getBytes());
+    }
+
+    /**
+     * A quota limit/stat node created directly under /zookeeper/quota has an
+     * empty quota namespace; committing it previously made
+     * PathTrie.addPath("") throw on the apply path. It must be rejected.
+     */
+    @Test
+    public void testQuotaNodeWithEmptyNamespaceIsRejected() throws Exception {
+        final String strayLimit = Quotas.quotaZookeeper + "/" + Quotas.limitNode;
+        final String strayStat = Quotas.quotaZookeeper + "/" + Quotas.statNode;
+        final byte[] data = new StatsTrack("count=10").getStatsBytes();
+        assertThrows(KeeperException.BadArgumentsException.class,
+                () -> zk.create(strayLimit, data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT));
+        assertThrows(KeeperException.BadArgumentsException.class,
+                () -> zk.create(strayStat, data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT));
+        assertNull(zk.exists(strayLimit, false));
+        assertNull(zk.exists(strayStat, false));
+
+        // the server keeps serving writes
+        zk.create("/afterEmptyNamespace", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        assertNotNull(zk.exists("/afterEmptyNamespace", false));
+    }
+
+    /**
+     * Deleting a zookeeper_limits node created directly under /zookeeper
+     * previously threw StringIndexOutOfBoundsException on the apply path,
+     * killing the server's critical request-processing thread and making the
+     * transaction log unreplayable. Both the live delete and a restart must work.
+     */
+    @Test
+    public void testStrayLimitNodeUnderZookeeperDoesNotCrashServer() throws Exception {
+        final String strayLimit = Quotas.procZookeeper + "/" + Quotas.limitNode;
+        zk.create(strayLimit, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.delete(strayLimit, -1);
+        assertNull(zk.exists(strayLimit, false));
+
+        zk.create("/afterStrayLimit", "x".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        // the data directory must still load on restart
+        stopServer();
+        startServer();
+        ZooKeeper zk2 = createClient();
+        try {
+            assertNotNull(zk2.exists("/afterStrayLimit", false));
+            assertNull(zk2.exists(strayLimit, false));
+        } finally {
+            zk2.close();
         }
     }
 
