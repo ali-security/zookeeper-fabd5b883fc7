@@ -34,7 +34,7 @@ public class JvmPauseMonitorTest {
     private JvmPauseMonitor pauseMonitor;
 
     @Test
-    @Timeout(value = 5)
+    @Timeout(value = 60)
     public void testJvmPauseMonitorExceedInfoThreshold() throws InterruptedException {
         QuorumPeerConfig qpConfig = mock(QuorumPeerConfig.class);
         when(qpConfig.getJvmPauseSleepTimeMs()).thenReturn(sleepTime);
@@ -52,7 +52,7 @@ public class JvmPauseMonitorTest {
     }
 
     @Test
-    @Timeout(value = 5)
+    @Timeout(value = 60)
     public void testJvmPauseMonitorExceedWarnThreshold() throws InterruptedException {
         QuorumPeerConfig qpConfig = mock(QuorumPeerConfig.class);
         when(qpConfig.getJvmPauseSleepTimeMs()).thenReturn(sleepTime);

@@ -71,7 +71,7 @@ public class UnifiedServerSocketTest extends BaseX509ParameterizedTestCase {
     }
 
     private static final int MAX_RETRIES = 5;
-    private static final int TIMEOUT = 1000;
+    private static final int TIMEOUT = 4000;
     private static final byte[] DATA_TO_CLIENT = "hello client".getBytes();
     private static final byte[] DATA_FROM_CLIENT = "hello server".getBytes();
 

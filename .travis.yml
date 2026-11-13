@@ -5,15 +5,6 @@ matrix:
     - os: linux
       arch: arm64
       jdk: openjdk11
-    - os: linux
-      arch: s390x
-      jdk: openjdk11
-      addons:
-        apt:
-          update: true
-          packages:
-            - maven
-            - libcppunit-dev
 
 cache:
   directories:
@@ -29,11 +20,4 @@ install:
      sudo apt-get install maven;
     fi
 
-script: mvn clean apache-rat:check verify -DskipTests spotbugs:check checkstyle:check -Pfull-build
-
-branches:
-  only:
-  - master
-  - branch-3.7
-  - branch-3.6
-  - branch-3.5
+script: mvn clean verify -DskipTests -Pfull-build

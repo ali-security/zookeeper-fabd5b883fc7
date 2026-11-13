@@ -54,7 +54,7 @@ public class SecretUtilsTest {
         final String pathToFile = "NonExistingFile";
         final IllegalStateException exception =
                 assertThrows(IllegalStateException.class, () -> SecretUtils.readSecret(pathToFile));
-        assertEquals("Exception occurred while reading secret from file " + pathToFile, exception.getMessage());
+        assertEquals("Exception occurred when reading secret from file " + pathToFile, exception.getMessage());
     }
 
     public static Path createSecretFile(final String secretTxt) throws IOException {
